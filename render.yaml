@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: draymsistem
+    runtime: python
+    pythonVersion: "3.11"
+    
+    buildCommand: bash build.sh
+    startCommand: python main.py
+    
+    envVars:
+      - key: PORT
+        value: 8000
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: TMP_DIR
+        value: /tmp
+
+    # Health check para validar que el servidor está corriendo
+    healthCheckPath: /
+    
+    # Timeout para construcción
+    buildTimeout: 30
+    
+    # Reintentos automáticos
+    preDeployCommand: pip cache purge
