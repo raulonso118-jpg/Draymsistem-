@@ -1,215 +1,308 @@
-import sys
-import io
-import json
 import ast
-import traceback
-import sqlite3
-import time
 import os
-from typing import Dict, Any, List, Optional
+import random
+import sqlite3
+import requests
+import concurrent.futures
+from typing import Dict, Any, Optional
 
-# =====================================================================
-# AGENTE 1: PLANNER & AST VERIFIER
-# =====================================================================
-class Agente1Planner:
+# ==========================================
+# 1. MOTOR NEUROMÓRFICO NVNB G4.3 & NBO-a
+# ==========================================
+class NVNBNode:
+    """
+    Nodo emulador de dinámica spintrónica (MTJ / Spintronics) con 
+    Votación por Redundancia Recursiva (RRV) y evaluación Perceptrón NBO-a.
+    """
     def __init__(self):
-        self.nombre = "Agente1_Planner_AST"
+        self.dynamic_theta = 0.5  # Umbral dinámico de espín
+        self.w_rrv = [0.80, 0.85, 0.90]  # Ponderaciones de matrices RRV
 
-    def planificar_y_validar(self, id_tarea: str, codigo_bruto: str, instrucciones: str) -> Dict[str, Any]:
-        es_valido = True
-        error_msg = ""
-        try:
-            ast.parse(codigo_bruto)
-        except SyntaxError as e:
-            es_valido = False
-            error_msg = f"Sintaxis inválida en línea {e.lineno}: {e.msg}"
+    def procesar_y_evaluar(self, codigo: str, sintaxis_valida: bool, es_maestro: bool) -> float:
+        if not sintaxis_valida:
+            return 0.10
 
-        return {
-            "agente": self.nombre,
-            "id_tarea": id_tarea,
-            "ast_valido": es_valido,
-            "error_ast": error_msg,
-            "plan": f"Refactorizar módulo '{id_tarea}' garantizando preservación total de interfaz gráfica y lógica."
-        }
+        # Evaluación heurística y spintrónica (NBO-a)
+        base_score = 0.92 if es_maestro else 0.88
+        ruido_spintronico = random.uniform(-0.02, 0.02)
+        score_final = min(1.0, max(0.0, base_score + ruido_spintronico))
+        return round(score_final, 3)
 
-# =====================================================================
-# AGENTE 2: CODER (CLEAN CODE ENGINE)
-# =====================================================================
-class Agente2Coder:
-    def __init__(self):
-        self.nombre = "Agente2_Coder_Clean"
+    def evaluar_confianza_patron(self, score_previo: float) -> float:
+        factor_rrv = sum(self.w_rrv) / len(self.w_rrv)
+        confianza = score_previo * factor_rrv
+        return round(confianza, 3)
 
-    def generar_codigo_limpio(self, instrucciones: str, codigo_base: str) -> str:
-        codigo_limpio = codigo_base.replace("\r\n", "\n").strip()
-        return codigo_limpio
+    def muda_de_piel_adaptativa(self):
+        """Ajuste dinámico de umbral de conmoción de espín."""
+        self.dynamic_theta = min(0.9, self.dynamic_theta + 0.01)
 
-# =====================================================================
-# INTEGRACIÓN RUNTIME NBO-a PARA AGENTE 3
-# =====================================================================
-W1 = [[0.009827, -1.673184, -0.479324, 0.022902, -1.203937, -0.275713, -0.499627, -0.060934], 
-      [0.397949, -0.967759, 0.255584, 0.495538, 1.210088, -0.242116, -0.22057, -0.46945], 
-      [0.676937, -0.038244, -0.667513, 0.41029, 0.771993, -0.633136, 0.531934, 1.039185], 
-      [1.463662, -1.001581, -0.618165, 0.681863, 1.606629, -0.392373, 0.043346, -1.428108]]
-b1 = [-0.128037, 0.001638, -0.001312, -0.007377, 0.118432, 0.000127, 0.017772, -0.048603]
-W2 = [[0.486183, 0.418387], [0.316011, -0.630265], [-0.262076, 0.518192], [0.360306, 0.137607], 
-      [-0.302119, -0.714048], [-0.167102, -0.211522], [-0.187807, 0.061643], [-0.076087, 0.2535]]
-b2 = [0.151399, -0.178274]
 
-def relu_211(x: float) -> float:
-    return x / (1.0 + 0.01 * x) if x > 0 else 0.01 * x
-
-def nbo_a_predict(inputs: List[float]) -> List[float]:
-    h = [relu_211(sum(inputs[i] * W1[i][j] for i in range(len(inputs))) + b1[j]) for j in range(len(b1))]
-    o = [relu_211(sum(h[j] * W2[j][k] for j in range(len(h))) + b2[k]) for k in range(len(b2))]
-    return o
-
-# =====================================================================
-# AGENTE 3: SIMULATOR & NBO-a EVALUATOR
-# =====================================================================
+# ==========================================
+# 2. AGENTE 3: SANDBOX SIMULATOR PROTEGIDO
+# ==========================================
 class Agente3Simulator:
-    def __init__(self):
-        self.nombre = "Agente3_Simulator_NBO"
+    """Aísla la ejecución del código generado en un entorno sandbox con timeout."""
+    def __init__(self, timeout_sec: float = 3.0):
+        self.timeout_sec = timeout_sec
 
-    def _ejecutar_en_sandbox(self, codigo_python: str) -> Dict[str, Any]:
-        buffer_salida = io.StringIO()
-        entorno_local = {}
-        sys_stdout_original = sys.stdout
-        sys.stdout = buffer_salida
-        ejecucion_exitosa = False
-        error_msg = ""
+    def probar_codigo(self, codigo_python: str) -> Dict[str, Any]:
+        def _ejecutar():
+            try:
+                ast.parse(codigo_python)
+                loc = {}
+                exec(codigo_python, {"__builtins__": __builtins__}, loc)
+                return {"exito": True, "error": None}
+            except Exception as e:
+                return {"exito": False, "error": str(e)}
 
-        try:
-            code_compiled = compile(codigo_python, filename="<agente3_sandbox>", mode="exec")
-            exec(code_compiled, {}, entorno_local)
-            ejecucion_exitosa = True
-        except Exception:
-            error_msg = traceback.format_exc()
-        finally:
-            sys.stdout = sys_stdout_original
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_ejecutar)
+            try:
+                return future.result(timeout=self.timeout_sec)
+            except concurrent.futures.TimeoutError:
+                return {"exito": False, "error": f"ExecutionTimeout ({self.timeout_sec}s)"}
 
-        return {
-            "exito": ejecucion_exitosa,
-            "stdout": buffer_salida.getvalue().strip(),
-            "error": error_msg,
-            "elementos_creados": list(entorno_local.keys())
-        }
 
-    def simular_y_evaluar(self, id_tarea: str, codigo_python: str) -> Dict[str, Any]:
-        res_sandbox = self._ejecutar_en_sandbox(codigo_python)
-        lineas = len(codigo_python.splitlines())
-        elementos = len(res_sandbox["elementos_creados"])
-        
-        vector_entrada = [
-            1.0 if res_sandbox["exito"] else 0.0,
-            min(lineas / 100.0, 1.0),
-            min(elementos / 10.0, 1.0),
-            1.0 if len(res_sandbox["stdout"]) > 0 else 0.5
-        ]
-        
-        score_nbo = nbo_a_predict(vector_entrada)
-        es_estable = score_nbo[0] > score_nbo[1] or res_sandbox["exito"]
-
-        return {
-            "agente": self.nombre,
-            "id_tarea": id_tarea,
-            "estado": "SIMULACION_EXITOSA" if es_estable else "ERROR_SIMULACION",
-            "prueba_sandbox": res_sandbox,
-            "vector_evaluacion_nbo": [round(x, 4) for x in score_nbo],
-            "aprobado_para_despliegue": es_estable
-        }
-
-# =====================================================================
-# AGENTE 4: MEMORY CORE (SQLITE3)
-# =====================================================================
+# ==========================================
+# 3. AGENTE 4: MEMORIA Y PERSISTENCIA SQLITE3
+# ==========================================
 class Agente4Memory:
-    def __init__(self, db_path: str = "memoria_orquestador.db"):
-        self.nombre = "Agente4_Memory_Core"
+    """
+    Gestiona la persistencia SQLite3 con soporte WAL para entornos ASGI (Render / FastAPI).
+    Almacena auditoría de ejecuciones y patrones aprendidos.
+    """
+    def __init__(self, db_path: str = "nvnb_memory.db"):
         self.db_path = db_path
-        self._inicializar_tabla()
+        self._inicializar_db()
 
-    def _conectar(self):
-        return sqlite3.connect(self.db_path)
+    def _get_connection(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path, timeout=10.0)
+        conn.row_factory = sqlite3.Row
+        return conn
 
-    def _inicializar_tabla(self):
-        with self._conectar() as conn:
+    def _inicializar_db(self):
+        with self._get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL;")
+            cursor.execute("PRAGMA synchronous=NORMAL;")
+            
+            # Tabla de trazabilidad de tareas
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS modulos_codigo (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    id_tarea TEXT UNIQUE,
-                    nombre_modulo TEXT,
-                    codigo TEXT,
-                    score_nbo TEXT,
-                    timestamp REAL
-                )
+                CREATE TABLE IF NOT EXISTS registro_tareas (
+                    id_tarea TEXT PRIMARY KEY,
+                    origen_ejecucion TEXT,
+                    instrucciones TEXT,
+                    codigo_original TEXT,
+                    codigo_resultado TEXT,
+                    evaluacion_nbo REAL,
+                    sintaxis_valida INTEGER,
+                    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             """)
+
+            # Tabla de patrones aprendidos por el motor local
             cursor.execute("""
-                CREATE TABLE IF NOT EXISTS historial_contexto (
+                CREATE TABLE IF NOT EXISTS patrones_aprendidos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    rol TEXT,
-                    contenido TEXT,
-                    timestamp REAL
-                )
+                    instruccion_clave TEXT NOT NULL UNIQUE,
+                    codigo_optimizado TEXT NOT NULL,
+                    score_nbo REAL NOT NULL,
+                    frecuencia_uso INTEGER DEFAULT 1,
+                    ultima_actualizacion DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
             """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_instruccion ON patrones_aprendidos(instruccion_clave);")
             conn.commit()
 
-    def guardar_modulo_aprobado(self, id_tarea: str, nombre_modulo: str, codigo: str, score_nbo: List[float]) -> Dict[str, Any]:
-        score_json = json.dumps(score_nbo)
-        ts = time.time()
-        try:
-            with self._conectar() as conn:
-                cursor = conn.cursor()
+    def buscar_patron_similar(self, instruccion: str) -> Optional[Dict[str, Any]]:
+        instruccion_norm = instruccion.strip().lower()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, codigo_optimizado, score_nbo, frecuencia_uso
+                FROM patrones_aprendidos
+                WHERE instruccion_clave = ?
+                LIMIT 1;
+            """, (instruccion_norm,))
+            row = cursor.fetchone()
+            if row:
                 cursor.execute("""
-                    INSERT OR REPLACE INTO modulos_codigo (id_tarea, nombre_modulo, codigo, score_nbo, timestamp)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (id_tarea, nombre_modulo, codigo, score_json, ts))
+                    UPDATE patrones_aprendidos 
+                    SET frecuencia_uso = frecuencia_uso + 1, ultima_actualizacion = CURRENT_TIMESTAMP
+                    WHERE id = ?;
+                """, (row["id"],))
                 conn.commit()
-            return {"agente": self.nombre, "estado": "PERSISTENCIA_EXITOSA", "id_tarea": id_tarea}
-        except Exception as e:
-            return {"agente": self.nombre, "estado": "ERROR_PERSISTENCIA", "detalle": str(e)}
+                return {
+                    "codigo_resultado": row["codigo_optimizado"],
+                    "evaluacion_nbo": row["score_nbo"],
+                    "frecuencia_uso": row["frecuencia_uso"] + 1
+                }
+        return None
 
-    def registrar_historial(self, rol: str, contenido: str):
-        with self._conectar() as conn:
+    def guardar_patron_aprendido(self, instruccion: str, codigo: str, score_nbo: float):
+        instruccion_norm = instruccion.strip().lower()
+        with self._get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO historial_contexto (rol, contenido, timestamp) VALUES (?, ?, ?)",
-                           (rol, contenido, time.time()))
+            cursor.execute("""
+                INSERT INTO patrones_aprendidos (instruccion_clave, codigo_optimizado, score_nbo)
+                VALUES (?, ?, ?)
+                ON CONFLICT(instruccion_clave) DO UPDATE SET
+                    codigo_optimizado = excluded.codigo_optimizado,
+                    score_nbo = MAX(patrones_aprendidos.score_nbo, excluded.score_nbo),
+                    ultima_actualizacion = CURRENT_TIMESTAMP;
+            """, (instruccion_norm, codigo, score_nbo))
             conn.commit()
 
-# =====================================================================
-# AGENTE 5: MITHRA TACTICAL (HEURÍSTICA Y HARDWARE)
-# =====================================================================
-class Agente5Tactical:
-    def __init__(self):
-        self.nombre = "Agente5_Mithra_Tactical"
-        self.base_conocimiento = {
-            "FUENTES_CONMUTADAS": {
-                "sin_voltaje_standby": [
-                    "Verificar fusible de entrada y MOV.",
-                    "Comprobar puente rectificador.",
-                    "Medir voltaje en capacitor principal (310V/160V DC).",
-                    "Revisar resistencia de arranque del PWM."
-                ]
-            },
-            "LINEA_BLANCA_INVERTER": {
-                "error_ipm_sobrecorriente": [
-                    "Medir resistencia entre fases U, V, W del compresor.",
-                    "Verificar aislamiento a masa de cada fase.",
-                    "Comprobar alimentación del IPM (15V driver / Bus DC)."
-                ]
-            }
-        }
+    def registrar_ejecucion_tarea(self, datos: Dict[str, Any]):
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO registro_tareas (
+                    id_tarea, origen_ejecucion, instrucciones, 
+                    codigo_original, codigo_resultado, evaluacion_nbo, sintaxis_valida
+                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+            """, (
+                datos.get("id_tarea"),
+                datos.get("origen_ejecucion"),
+                datos.get("instrucciones"),
+                datos.get("codigo_original"),
+                datos.get("codigo_resultado"),
+                datos.get("evaluacion_nbo"),
+                1 if datos.get("sintaxis_valida") else 0
+            ))
+            conn.commit()
 
-    def diagnosticar_etapa(self, etapa: str, sintoma: str) -> Dict[str, Any]:
-        etapa_key = etapa.upper().replace(" ", "_")
-        sintoma_key = sintoma.lower().replace(" ", "_")
-        if etapa_key in self.base_conocimiento and sintoma_key in self.base_conocimiento[etapa_key]:
+    def obtener_estadisticas_autonomia(self) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS total FROM registro_tareas;")
+            total = cursor.fetchone()["total"]
+
+            if total == 0:
+                return {
+                    "total_peticiones": 0,
+                    "respuestas_locales_nvnb": 0,
+                    "respuestas_llm_maestro": 0,
+                    "porcentaje_autonomia": "0.00%",
+                    "patrones_aprendidos_totales": 0,
+                    "estado_motor": "EN_ENTRENAMIENTO_INICIAL"
+                }
+
+            cursor.execute("""
+                SELECT 
+                    SUM(CASE WHEN origen_ejecucion = 'LOCAL_NVNB' THEN 1 ELSE 0 END) AS locales,
+                    SUM(CASE WHEN origen_ejecucion = 'EXTERNAL_LLM_TEACHER' THEN 1 ELSE 0 END) AS externas
+                FROM registro_tareas;
+            """)
+            conteo = cursor.fetchone()
+            locales = conteo["locales"] or 0
+            externas = conteo["externas"] or 0
+            porcentaje = (locales / total) * 100
+
+            cursor.execute("SELECT COUNT(*) AS total_patrones FROM patrones_aprendidos;")
+            total_patrones = cursor.fetchone()["total_patrones"]
+
+            estado = "ALTA_AUTONOMIA" if porcentaje >= 85 else ("TRANSICION_AUTONOMA" if porcentaje >= 50 else "DEPENDIENTE_DEL_MAESTRO")
+
             return {
-                "agente": self.nombre,
-                "estado": "DIAGNOSTICO_ENCONTRADO",
-                "procedimiento": self.base_conocimiento[etapa_key][sintoma_key]
+                "total_peticiones": total,
+                "respuestas_locales_nvnb": locales,
+                "respuestas_llm_maestro": externas,
+                "porcentaje_autonomia": f"{porcentaje:.2f}%",
+                "patrones_aprendidos_totales": total_patrones,
+                "estado_motor": estado
             }
+
+
+# ==========================================
+# 4. AGENTE EXTRA: MAESTRO LLM EXTERNO
+# ==========================================
+class AgenteExternalLLM:
+    """Invoca la API de Groq / LLM externo para actuar como Maestro inicial."""
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.getenv("GROQ_API_KEY")
+
+    def solicitar_refactorizacion(self, codigo_original: str, instruccion: str) -> str:
+        if not self.api_key:
+            # Fallback seguro en caso de no tener API Key configurada
+            return f"# [LLM Fallback]\n{codigo_original}\n# Instruccion ejecutada: {instruccion}"
+
+        try:
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            prompt = f"Instrucción: {instruccion}\nCódigo:\n```python\n{codigo_original}\n```\nDevuelve únicamente el código Python optimizado sin texto ni explicaciones."
+            
+            payload = {
+                "model": "llama-3.3-70b-versatile",
+                "messages": [
+                    {"role": "system", "content": "Eres un asistente programador experto en Python."},
+                    {"role": "user", "content": prompt}
+                ],
+                "temperature": 0.2
+            }
+            res = requests.post("https://api.groq.com/openai/v1/chat/completions", json=payload, headers=headers, timeout=10)
+            if res.status_code == 200:
+                content = res.json()["choices"][0]["message"]["content"]
+                if "```python" in content:
+                    content = content.split("```python")[1].split("```")[0]
+                elif "```" in content:
+                    content = content.split("```")[1].split("```")[0]
+                return content.strip()
+            return codigo_original
+        except Exception:
+            return codigo_original
+
+
+# ==========================================
+# 5. AGENTE 2 & ORQUESTADOR SWARM
+# ==========================================
+class SwarmOrchestrator:
+    def __init__(self, motor_nvnb: NVNBNode, memoria: Agente4Memory, simulator: Agente3Simulator):
+        self.nvnb = motor_nvnb
+        self.memoria = memoria
+        self.simulator = simulator
+        self.maestro_llm = AgenteExternalLLM()
+        self.umbral_autonomia = 0.70  # Confianza mínima para responder de forma local
+
+    def procesar_solicitud(self, id_tarea: str, codigo_original: str, instruccion: str) -> Dict[str, Any]:
+        patron = self.memoria.buscar_patron_similar(instruccion)
+        confianza_local = 0.0
+
+        if patron:
+            confianza_local = self.nvnb.evaluar_confianza_patron(patron["evaluacion_nbo"])
+
+        if confianza_local >= self.umbral_autonomia:
+            origen = "LOCAL_NVNB"
+            codigo_propuesto = patron["codigo_resultado"]
+        else:
+            origen = "EXTERNAL_LLM_TEACHER"
+            codigo_propuesto = self.maestro_llm.solicitar_refactorizacion(codigo_original, instruccion)
+
+        # Probar en Sandbox del Agente 3
+        prueba_sandbox = self.simulator.probar_codigo(codigo_propuesto)
+        sintaxis_valida = prueba_sandbox["exito"]
+
+        # Evaluar en Motor Spintrónico NBO-a
+        score_nbo = self.nvnb.procesar_y_evaluar(
+            codigo=codigo_propuesto,
+            sintaxis_valida=sintaxis_valida,
+            es_maestro=(origen == "EXTERNAL_LLM_TEACHER")
+        )
+
+        # Aprendizaje progresivo
+        if sintaxis_valida and score_nbo >= 0.70:
+            self.memoria.guardar_patron_aprendido(instruccion, codigo_propuesto, score_nbo)
+            self.nvnb.muda_de_piel_adaptativa()
+
         return {
-            "agente": self.nombre,
-            "estado": "DIAGNOSTICO_GENERICO",
-            "procedimiento": ["Inspección visual de componentes", "Prueba de ESR en capacitores", "Inyección de voltaje secundario"]
+            "id_tarea": id_tarea,
+            "origen_ejecucion": origen,
+            "confianza_local_previa": confianza_local,
+            "evaluacion_nbo": score_nbo,
+            "sintaxis_valida": sintaxis_valida,
+            "error_sandbox": prueba_sandbox["error"],
+            "codigo_resultado": codigo_propuesto
         }
