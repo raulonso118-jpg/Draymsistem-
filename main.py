@@ -6,7 +6,6 @@ import traceback
 import sqlite3
 import time
 import os
-import tempfile
 import numpy as np
 from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, HTTPException
@@ -18,13 +17,8 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# RUTA DE ALMACENAMIENTO COMPATIBLE CON RENDER Y SISTEMAS LOCALES
-TMP_DIR = os.environ.get("TMP_DIR", tempfile.gettempdir())
-if not os.path.exists(TMP_DIR):
-    try:
-        os.makedirs(TMP_DIR, exist_ok=True)
-    except:
-        TMP_DIR = tempfile.gettempdir()
+# RUTA DE ALMACENAMIENTO TEMPORAL PERMITIDA EN RENDER
+TMP_DIR = "/tmp"
 
 # =====================================================================
 # AGENTES DEL ENJAMBRE
@@ -127,10 +121,8 @@ class Agente3Simulator:
         }
 
 class Agente4Memory:
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = os.path.join(TMP_DIR, "memoria_orquestador.db")):
         self.nombre = "Agente4_Memory_Core"
-        if db_path is None:
-            db_path = os.path.join(TMP_DIR, "memoria_orquestador.db")
         self.db_path = db_path
         self._inicializar_tabla()
 
@@ -413,8 +405,7 @@ def estado_sistema():
         "sistema": "NVNB G4.3 & NBO-a Multi-Agent System",
         "estado": "OPERATIVO",
         "agentes": [planner.nombre, coder.nombre, simulator.nombre, memory.nombre, tactical.nombre],
-        "motor_ia_generativa": "NVNB Spintronic Neuromorphic Core G4.3 (Maestro)",
-        "tmp_dir": TMP_DIR
+        "motor_ia_generativa": "NVNB Spintronic Neuromorphic Core G4.3 (Maestro)"
     }
 
 @app.post("/chat")
@@ -486,8 +477,4 @@ def refactorizar_codigo(solicitud: SolicitudRefactorizacion) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    print(f"\n✓ Iniciando Draymsistem en puerto {port}")
-    print(f"✓ TMP_DIR: {TMP_DIR}")
-    print(f"✓ Accede en: http://localhost:{port}\n")
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
