@@ -12,7 +12,7 @@ Sistema multi-agente con motor neuromórfico spintrónico para refactorización 
 
 ## Requisitos
 
-- Python 3.11+
+- Python 3.11.0
 - pip
 
 ## Instalación local
@@ -30,7 +30,7 @@ La app corre en http://localhost:8000
 
 - Build Command: `bash build.sh`
 - Start Command: `python main.py`
-- Runtime: Python 3.11
+- Runtime: Python 3.11.0
 
 ## Archivos importantes
 
