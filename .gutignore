@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+knowledge_base.json
+.DS_Store
+.env
