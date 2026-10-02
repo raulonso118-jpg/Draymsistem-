@@ -1,0 +1,6 @@
+fastapi
+uvicorn
+numpy
+pillow
+duckduckgo_search
+pydantic
