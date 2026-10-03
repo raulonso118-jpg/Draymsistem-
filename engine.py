@@ -9,22 +9,14 @@ class GenerativeCoreEngine:
         self.orchestrator = AgentOrchestrator()
 
     def generate(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        prompt = payload.get("user_prompt", "")
-        web_context = payload.get("web_context", [])
-        
-        # Procesar flujo a través de los 5 agentes
+        # Ejecución del pipeline síncrono
         pipeline_results = self.orchestrator.run_pipeline(payload)
 
-        # Construcción de la respuesta integrada
-        contexto_web_texto = ""
-        if web_context:
-            contexto_web_texto = "\n\n[Información encontrada en la red]:\n" + "\n".join(
-                [f"- {item.get('title')}: {item.get('snippet')}" for item in web_context if "error" not in item]
-            )
-
-        resultado_texto = f"[{self.system_name}] Procesado con éxito el prompt: '{prompt}'."
-        if contexto_web_texto:
-            resultado_texto += contexto_web_texto
+        # Extraer respuesta del perceptrón / agente de síntesis
+        resultado_texto = pipeline_results.get(
+            "respuesta_generada",
+            f"[{self.system_name}] Sin respuesta del agente de síntesis."
+        )
 
         return {
             "engine": self.system_name,
