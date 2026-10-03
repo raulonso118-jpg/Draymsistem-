@@ -1,4 +1,5 @@
-from typing import Dict, Any, List
+from typing import Dict, Any
+from nbo_core import predict_nbo, text_to_vector
 
 class BaseAgent:
     def __init__(self, name: str, role: str):
@@ -6,61 +7,52 @@ class BaseAgent:
         self.role = role
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        raise NotImplementedError("Cada agente debe implementar su propia lógica de procesamiento.")
+        raise NotImplementedError
 
 class MemoryAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Memoria", "Gestión de Contexto y Persistencia")
+        super().__init__("Agente_Memoria", "Gestión Contextual")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        # Extrae el historial/contexto previo si existe en el payload original
-        payload = input_data if "payload_original" not in input_data else input_data.get("payload_original", {})
+        payload = input_data.get("payload_original", input_data)
         learned = payload.get("learned_context", {})
-        return {
-            "conceptos_previos_cargados": len(learned),
-            "memoria_activa": learned
-        }
+        return {"conceptos_cargados": len(learned)}
 
 class AnalysisAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Analisis", "Inferencia y Lógica Principal")
+        super().__init__("Agente_Analisis", "Evaluación Perceptronal")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
+        vector_in = text_to_vector(prompt, dim=4)
+        activaciones = predict_nbo(vector_in)
         return {
-            "analisis": f"Análisis de intención completado para: '{prompt}'",
-            "longitud_prompt": len(prompt)
+            "vector_entrada": vector_in,
+            "activaciones_nbo": [round(x, 4) for x in activaciones]
         }
 
 class WebResearchAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Investigacion", "Análisis de Datos Web Externe")
+        super().__init__("Agente_Investigacion", "Contexto Web")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         payload = input_data.get("payload_original", {})
         web_context = payload.get("web_context", [])
-        return {
-            "fuentes_analizadas": len(web_context),
-            "contexto_web": web_context,
-            "hay_informacion_web": len(web_context) > 0
-        }
+        return {"fuentes": web_context, "hay_web": len(web_context) > 0}
 
 class CodeAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Codigo", "Sintaxis, Desarrollo e Ingeniería")
+        super().__init__("Agente_Codigo", "Sintaxis e Ingeniería")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
-        palabras_clave = ["python", "code", "script", "función", "api", "html", "css", "js", "def "]
-        is_code = any(kw in prompt.lower() for kw in palabras_clave)
-        return {
-            "requiere_codigo": is_code,
-            "contexto_tecnico": "Modo técnico activado" if is_code else "Consulta estándar"
-        }
+        palabras_clave = ["python", "code", "script", "función", "def ", "html", "js", "css"]
+        es_codigo = any(kw in prompt.lower() for kw in palabras_clave)
+        return {"requiere_codigo": es_codigo}
 
 class SynthesisAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Sintesis", "Generación y Consolidación de Respuesta")
+        super().__init__("Agente_Sintesis", "Consolidación de Respuesta")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
@@ -68,29 +60,23 @@ class SynthesisAgent(BaseAgent):
         codigo = input_data.get("codigo", {})
         investigacion = input_data.get("investigacion", {})
 
-        # Si estás integrando una API externa (OpenAI, Gemini, Ollama, etc.)
-        # aquí es donde le pasas la instrucción (system prompt) al modelo.
+        salida_red = analisis.get("activaciones_nbo", [0.0, 0.0])
+        partes = []
 
-        # Construcción de respuesta consolidada del pipeline
-        partes_respuesta = []
-        
-        # 1. Indicador técnico si detectó código
         if codigo.get("requiere_codigo"):
-            partes_respuesta.append("[Agente Código]: Se detectó una solicitud de desarrollo.")
+            partes.append("```python\n# [Bloque generado bajo patrón perceptrónico NBO-a]\n```")
 
-        # 2. Información web si la hay
-        if investigacion.get("hay_informacion_web"):
-            fuentes = investigacion.get("contexto_web", [])
-            partes_respuesta.append("\n[Agente Investigación]: Se halló la siguiente información relevante:")
-            for item in fuentes:
-                partes_respuesta.append(f"- {item.get('title', 'Fuente')}: {item.get('snippet', '')}")
+        if investigacion.get("hay_web"):
+            partes.append("\n[Información web integrada]:")
+            for item in investigacion.get("fuentes", []):
+                partes.append(f"- {item.get('title')}: {item.get('snippet')}")
 
-        # 3. Respuesta base generada
-        partes_respuesta.append(f"\n[Respuesta Procesada]: En relación a tu consulta '{prompt}', el sistema ha coordinado el análisis y la validación de contexto con éxito.")
-
-        texto_final = "\n".join(partes_respuesta)
+        partes.append(
+            f"\n[Procesamiento NBO-a completado con éxito]"
+            f"\nInferencia relu_211 calculada: {salida_red}"
+        )
 
         return {
-            "estado_sintesis": "Respuesta consolidada",
-            "texto_sintetizado": texto_final
+            "estado": "exito",
+            "texto_sintetizado": "\n".join(partes)
         }
