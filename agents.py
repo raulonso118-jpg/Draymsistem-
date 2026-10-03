@@ -64,19 +64,20 @@ class SynthesisAgent(BaseAgent):
         partes = []
 
         if codigo.get("requiere_codigo"):
-            partes.append("```python\n# [Bloque generado bajo patrón perceptrónico NBO-a]\n```")
+            partes.append("```python\n# [Bloque generado bajo patrón perceptrónico]\n```")
 
         if investigacion.get("hay_web"):
-            partes.append("\n[Información web integrada]:")
+            partes.append("\n[Información relevante incorporada]:")
             for item in investigacion.get("fuentes", []):
                 partes.append(f"- {item.get('title')}: {item.get('snippet')}")
 
         partes.append(
             f"\n[Procesamiento NBO-a completado con éxito]"
-            f"\nInferencia relu_211 calculada: {salida_red}"
+            f"\nActivación relu_211 en capa final: {salida_red}"
         )
 
         return {
             "estado": "exito",
             "texto_sintetizado": "\n".join(partes)
-        }
+    }
+    
