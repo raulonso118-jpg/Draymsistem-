@@ -10,17 +10,32 @@ class AgentOrchestrator:
         self.agente_sintesis = SynthesisAgent()
 
     def run_pipeline(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        # Ejecución coordinada de los 5 agentes
-        res_memoria = self.agente_memoria.process(payload)
-        res_analisis = self.agente_analisis.process(payload)
-        res_codigo = self.agente_codigo.process(payload)
-        res_investigacion = self.agente_investigacion.process(payload)
-        res_sintesis = self.agente_sintesis.process(payload)
+        # Contexto acumulativo para que los agentes compartan información
+        contexto_acumulado = {
+            "payload_original": payload,
+            "prompt": payload.get("user_prompt", "")
+        }
+
+        # 1. Recuperar memoria/historial
+        contexto_acumulado["memoria"] = self.agente_memoria.process(payload)
+        
+        # 2. Análisis del prompt
+        contexto_acumulado["analisis"] = self.agente_analisis.process(contexto_acumulado)
+
+        # 3. Búsqueda web / Investigación
+        contexto_acumulado["investigacion"] = self.agente_investigacion.process(contexto_acumulado)
+
+        # 4. Generación o revisión de código
+        contexto_acumulado["codigo"] = self.agente_codigo.process(contexto_acumulado)
+
+        # 5. Síntesis final (Recibe TODO el trabajo previo para generar la respuesta)
+        resultado_final = self.agente_sintesis.process(contexto_acumulado)
 
         return {
-            "agente_memoria": res_memoria,
-            "agente_analisis": res_analisis,
-            "agente_codigo": res_codigo,
-            "agente_investigacion": res_investigacion,
-            "agente_sintesis": res_sintesis
+            "agente_memoria": contexto_acumulado["memoria"],
+            "agente_analisis": contexto_acumulado["analisis"],
+            "agente_investigacion": contexto_acumulado["investigacion"],
+            "agente_codigo": contexto_acumulado["codigo"],
+            "agente_sintesis": resultado_final,
+            "respuesta_generada": resultado_final.get("texto_sintetizado", "") # Salida limpia
         }
