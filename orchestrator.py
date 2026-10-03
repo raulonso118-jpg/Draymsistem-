@@ -1,8 +1,10 @@
 from typing import Dict, Any
 from agents import AnalysisAgent, CodeAgent, MemoryAgent, WebResearchAgent, SynthesisAgent
+from nvnb_router import NVNBRouter
 
 class AgentOrchestrator:
     def __init__(self):
+        self.router_nvnb = NVNBRouter()
         self.agente_analisis = AnalysisAgent()
         self.agente_codigo = CodeAgent()
         self.agente_memoria = MemoryAgent()
@@ -10,32 +12,28 @@ class AgentOrchestrator:
         self.agente_sintesis = SynthesisAgent()
 
     def run_pipeline(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        # Contexto acumulativo para que los agentes compartan información
-        contexto_acumulado = {
+        prompt = payload.get("user_prompt", "")
+        
+        # Enrutamiento en int8
+        ruta = self.router_nvnb.enrutar(prompt)
+
+        contexto = {
             "payload_original": payload,
-            "prompt": payload.get("user_prompt", "")
+            "prompt": prompt,
+            "ruta_nvnb": ruta
         }
 
-        # 1. Recuperar memoria/historial
-        contexto_acumulado["memoria"] = self.agente_memoria.process(payload)
-        
-        # 2. Análisis del prompt
-        contexto_acumulado["analisis"] = self.agente_analisis.process(contexto_acumulado)
+        # Ejecución secuencial interna en memoria
+        contexto["memoria"] = self.agente_memoria.process(payload)
+        contexto["analisis"] = self.agente_analisis.process(contexto)
+        contexto["investigacion"] = self.agente_investigacion.process(contexto)
+        contexto["codigo"] = self.agente_codigo.process(contexto)
 
-        # 3. Búsqueda web / Investigación
-        contexto_acumulado["investigacion"] = self.agente_investigacion.process(contexto_acumulado)
-
-        # 4. Generación o revisión de código
-        contexto_acumulado["codigo"] = self.agente_codigo.process(contexto_acumulado)
-
-        # 5. Síntesis final (Recibe TODO el trabajo previo para generar la respuesta)
-        resultado_final = self.agente_sintesis.process(contexto_acumulado)
+        resultado_final = self.agente_sintesis.process(contexto)
 
         return {
-            "agente_memoria": contexto_acumulado["memoria"],
-            "agente_analisis": contexto_acumulado["analisis"],
-            "agente_investigacion": contexto_acumulado["investigacion"],
-            "agente_codigo": contexto_acumulado["codigo"],
+            "ruta_evaluada": ruta,
             "agente_sintesis": resultado_final,
-            "respuesta_generada": resultado_final.get("texto_sintetizado", "") # Salida limpia
+            "respuesta_generada": resultado_final.get("texto_sintetizado", "")
         }
+        
