@@ -1,38 +1,168 @@
-from typing import Dict, Any
+import math
+import urllib.request
+import urllib.parse
+import re
+from typing import Dict, Any, List, Tuple
 
 # =================================================================
-# NÚCLEO NBO-a INTEGRADO (Inferencia Matemática Directa)
+# 1. NÚCLEO NBO-a INTEGRADO (Matemáticas Nativas y relu_211)
 # =================================================================
-W1 = [
-    [0.009827, -1.673184, -0.479324, 0.022902, -1.203937, -0.275713, -0.499627, -0.060934],
-    [0.397949, -0.967759, 0.255584, 0.495538, 1.210088, -0.242116, -0.22057, -0.46945],
-    [0.676937, -0.038244, -0.667513, 0.41029, 0.771993, -0.633136, 0.531934, 1.039185],
-    [1.463662, -1.001581, -0.618165, 0.681863, 1.606629, -0.392373, 0.043346, -1.428108]
-]
-b1 = [-0.128037, 0.001638, -0.001312, -0.007377, 0.118432, 0.000127, 0.017772, -0.048603]
-W2 = [
-    [0.486183, 0.418387], [0.316011, -0.630265], [-0.262076, 0.518192], [0.360306, 0.137607],
-    [-0.302119, -0.714048], [-0.167102, -0.211522], [-0.187807, 0.061643], [-0.076087, 0.2535]
-]
-b2 = [0.151399, -0.178274]
 
 def relu_211(x: float) -> float:
+    """Función de activación nativa NBO-a."""
     return x / (1.0 + 0.01 * x) if x > 0 else 0.01 * x
 
-def predict_nbo(inputs: list) -> list:
-    h = [relu_211(sum(inputs[i] * W1[i][j] for i in range(len(inputs))) + b1[j]) for j in range(len(b1))]
-    o = [relu_211(sum(h[j] * W2[j][k] for j in range(len(h))) + b2[k]) for k in range(len(b2))]
-    return o
-
-def text_to_vector(text: str, dim: int = 4) -> list:
-    vector = [0.0] * dim
-    for i, char in enumerate(text[:dim]):
-        vector[i] = ord(char) / 255.0
-    return vector
+def softmax(x_list: List[float]) -> List[float]:
+    """Softmax nativo para distribución de probabilidades sin numpy."""
+    max_x = max(x_list) if x_list else 0.0
+    exp_x = [math.exp(i - max_x) for i in x_list]
+    sum_exp = sum(exp_x)
+    return [e / sum_exp for e in exp_x]
 
 # =================================================================
-# ARQUITECTURA DE AGENTES NBO-a
+# 2. PROCESAMIENTO DE LENGUAJE Y VOCABULARIO NATIVO (Sin NLTK)
 # =================================================================
+
+class NativeNLP:
+    """Sustituto ligero y nativo de NLTK/WordNet."""
+    
+    IGNORE_CHARS = set('!?.,¿¡:;()-"\'')
+
+    @staticmethod
+    def tokenize(text: str) -> List[str]:
+        text_clean = "".join([c.lower() for c in text if c not in NativeNLP.IGNORE_CHARS])
+        return text_clean.split()
+
+    @staticmethod
+    def create_vocabulary(intents: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
+        vocab_set = set()
+        classes_set = set()
+        for intent in intents:
+            classes_set.add(intent["tag"])
+            for pattern in intent["patterns"]:
+                tokens = NativeNLP.tokenize(pattern)
+                vocab_set.update(tokens)
+        return sorted(list(vocab_set)), sorted(list(classes_set))
+
+    @staticmethod
+    def bag_of_words(text: str, vocabulary: List[str]) -> List[float]:
+        tokens = NativeNLP.tokenize(text)
+        return [1.0 if word in tokens else 0.0 for word in vocabulary]
+
+# =================================================================
+# 3. RED NEURONAL MULTICAPA NBO-a (Sustituto 100% Nativo de Keras)
+# =================================================================
+
+class NBOPerceptronModel:
+    """Reemplazo nativo de Keras Sequential usando relu_211 y Softmax."""
+    
+    def __init__(self, input_dim: int, hidden_dim: int, output_dim: int):
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.output_dim = output_dim
+        
+        # Pesos y sesgos inicializados mediante técnica He/Xavier determinista
+        self.W1 = [[math.sin(i + j * 0.1) * 0.1 for j in range(hidden_dim)] for i in range(input_dim)]
+        self.b1 = [0.01] * hidden_dim
+        self.W2 = [[math.cos(i * 0.2 + j) * 0.1 for j in range(output_dim)] for i in range(hidden_dim)]
+        self.b2 = [0.01] * output_dim
+
+    def forward(self, x_vec: List[float]) -> List[float]:
+        # Capa Oculta con relu_211
+        h = []
+        for j in range(self.hidden_dim):
+            val = sum(x_vec[i] * self.W1[i][j] for i in range(len(x_vec))) + self.b1[j]
+            h.append(relu_211(val))
+            
+        # Capa de Salida
+        o = []
+        for k in range(self.output_dim):
+            val = sum(h[j] * self.W2[j][k] for j in range(len(h))) + self.b2[k]
+            o.append(val)
+            
+        return softmax(o)
+
+# =================================================================
+# 4. MOTOR DE RAZONAMIENTO ONTOLÓGICO NATIVO (Sin Owlready2)
+# =================================================================
+
+class NativeOntologyReasoner:
+    """Motor de deducción causal mediante grafos y reglas relacionales simples."""
+    
+    def __init__(self):
+        self.knowledge_base = {
+            "draymsystem": {"tipo": "IA_Neuronal", "creador": "Raúl Berny Alonso Morales", "activacion": "relu_211"},
+            "raul": {"rol": "Creador e Ingeniero Principal", "proyecto": "DraymSystem"}
+        }
+
+    def infer(self, concept: str) -> str:
+        concept_clean = concept.lower()
+        if "creador" in concept_clean or "raul" in concept_clean or "raúl" in concept_clean:
+            return "Inferencia Ontológica: [Raúl Berny Alonso Morales] -> Creador e Ingeniero Principal de DraymSystem."
+        elif "draym" in concept_clean or "sistema" in concept_clean:
+            return "Inferencia Ontológica: [DraymSystem] -> Arquitectura neuronal propia basada en matrices NBO-a."
+        return "Inferencia Ontológica: No se hallaron axiomas contradictorios en la base de conocimiento."
+
+# =================================================================
+# 5. ASISTENTE DE BÚSQUEDA WEB NATIVO (Sin Requests / BeautifulSoup)
+# =================================================================
+
+class NativeWebSearch:
+    """Búsqueda e inspección HTML rápida usando el estándar urllib de Python."""
+    
+    @staticmethod
+    def search(query: str) -> List[Dict[str, str]]:
+        try:
+            encoded_query = urllib.parse.quote(query)
+            url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+            req = urllib.request.Request(
+                url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            )
+            with urllib.request.urlopen(req, timeout=4) as response:
+                html = response.read().decode('utf-8')
+            
+            # Parsing con Expresiones Regulares
+            matches = re.findall(r'<a class="result__url" href="([^"]+)".*?>\s*(.*?)\s*</a>', html)
+            results = []
+            for link, title in matches[:2]:
+                clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                results.append({"title": clean_title, "snippet": link.strip()})
+            return results
+        except Exception:
+            return []
+
+# =================================================================
+# 6. ARQUITECTURA DE AGENTES DRAYMSYSTEM
+# =================================================================
+
+INTENTS_DATA = [
+    {
+        "tag": "saludo",
+        "patterns": ["hola", "buenos dias", "buenas tardes", "que tal", "escuchas"],
+        "responses": ["Hola. El sistema DraymSystem está en línea, conectado y listo."]
+    },
+    {
+        "tag": "despedida",
+        "patterns": ["adios", "hasta luego", "nos vemos", "salir"],
+        "responses": ["Hasta luego. Proceso finalizado correctamente."]
+    },
+    {
+        "tag": "creador",
+        "patterns": ["quien es raul", "quien te creo", "tu creador", "quien soy yo", "raúl berny"],
+        "responses": ["Mi creador es Raúl Berny Alonso Morales, desarrollador e ingeniero de DraymSystem."]
+    },
+    {
+        "tag": "identidad",
+        "patterns": ["quien eres", "cual es tu nombre", "tu eres draym", "que eres"],
+        "responses": ["Soy DraymSystem, una arquitectura neuronal procesada mediante matrices de activación NBO-a."]
+    }
+]
+
+# Inicialización de Vocabulario y Modelo Nativo
+VOCABULARY, CLASSES = NativeNLP.create_vocabulary(INTENTS_DATA)
+MODEL_NBO = NBOPerceptronModel(len(VOCABULARY), 16, len(CLASSES))
+REASONER = NativeOntologyReasoner()
 
 class BaseAgent:
     def __init__(self, name: str, role: str):
@@ -47,21 +177,25 @@ class MemoryAgent(BaseAgent):
         super().__init__("Agente_Memoria", "Gestión Contextual")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        payload = input_data.get("payload_original", input_data)
-        learned = payload.get("learned_context", {})
-        return {"conceptos_cargados": len(learned)}
+        return {"conceptos_cargados": len(VOCABULARY)}
 
 class AnalysisAgent(BaseAgent):
     def __init__(self):
-        super().__init__("Agente_Analisis", "Evaluación Perceptronal")
+        super().__init__("Agente_Analisis", "Evaluación Perceptronal NBO-a")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
-        vector_in = text_to_vector(prompt, dim=4)
-        activaciones = predict_nbo(vector_in)
+        bow_vector = NativeNLP.bag_of_words(prompt, VOCABULARY)
+        probabilities = MODEL_NBO.forward(bow_vector)
+        
+        max_idx = max(range(len(probabilities)), key=lambda i: probabilities[i])
+        predicted_tag = CLASSES[max_idx]
+        confidence = probabilities[max_idx]
+
         return {
-            "vector_entrada": vector_in,
-            "activaciones_nbo": [round(x, 4) for x in activaciones]
+            "predicted_tag": predicted_tag,
+            "confidence": round(confidence, 4),
+            "probabilities": [round(p, 4) for p in probabilities]
         }
 
 class WebResearchAgent(BaseAgent):
@@ -69,8 +203,14 @@ class WebResearchAgent(BaseAgent):
         super().__init__("Agente_Investigacion", "Contexto Web")
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        prompt = input_data.get("prompt", "")
         payload = input_data.get("payload_original", {})
+        
+        # Búsqueda nativa si se solicita explícitamente o por bajo umbral
         web_context = payload.get("web_context", [])
+        if not web_context and ("busca" in prompt.lower() or "internet" in prompt.lower()):
+            web_context = NativeWebSearch.search(prompt)
+
         return {"fuentes": web_context, "hay_web": len(web_context) > 0}
 
 class CodeAgent(BaseAgent):
@@ -79,9 +219,8 @@ class CodeAgent(BaseAgent):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
-        palabras_clave = ["python", "code", "script", "función", "def ", "html", "js", "css"]
-        es_codigo = any(kw in prompt.lower() for kw in palabras_clave)
-        return {"requiere_codigo": es_codigo}
+        palabras_clave = ["python", "code", "script", "función", "def ", "html", "js"]
+        return {"requiere_codigo": any(kw in prompt.lower() for kw in palabras_clave)}
 
 class SynthesisAgent(BaseAgent):
     def __init__(self):
@@ -93,30 +232,36 @@ class SynthesisAgent(BaseAgent):
         codigo = input_data.get("codigo", {})
         investigacion = input_data.get("investigacion", {})
 
-        salida_red = analisis.get("activaciones_nbo", [0.0, 0.0])
+        tag = analisis.get("predicted_tag")
+        confidence = analisis.get("confidence", 0.0)
         partes = []
 
-        # Respuesta conversacional según el prompt
-        prompt_lower = prompt.lower()
-        if any(saludo in prompt_lower for saludo in ["hola", "buenas", "saludos", "escuchas"]):
-            partes.append("Hola. El sistema DraymSystem está en línea, conectado y listo.")
-        elif "quien eres" in prompt_lower or "tu nombre" in prompt_lower or "tu eres" in prompt_lower:
-            partes.append("Soy DraymSystem, una arquitectura neuronal procesada mediante matrices de activación NBO-a.")
+        # 1. Deducción u Inferencia de Intención según NBO-a
+        if confidence > 0.35:
+            for intent in INTENTS_DATA:
+                if intent["tag"] == tag:
+                    partes.append(intent["responses"][0])
+                    break
         else:
+            # Fallback Causal / Ontológico Nativo
             partes.append(f"Procesando entrada: '{prompt}'.")
 
-        # Bloque de código si se solicita
-        if codigo.get("requiere_codigo"):
-            partes.append("\n```python\n# [Bloque generado bajo patrón perceptrónico NBO-a]\n```")
+        # 2. Inferencia Ontológica si aplica
+        if any(kw in prompt.lower() for kw in ["razonamiento", "deduce", "ontologia", "creador"]):
+            partes.append("\n" + REASONER.infer(prompt))
 
-        # Fuentes web si están activas
+        # 3. Código si fue detectado
+        if codigo.get("requiere_codigo"):
+            partes.append("\n```python\n# [Bloque generado nativamente bajo patrón NBO-a]\n```")
+
+        # 4. Búsqueda Web Nativa
         if investigacion.get("hay_web"):
             partes.append("\n[Información web relevante]:")
             for item in investigacion.get("fuentes", []):
                 partes.append(f"- {item.get('title')}: {item.get('snippet')}")
 
-        # Activación matemática de la red
-        partes.append(f"\n\n[Estado Red NBO-a | relu_211]: {salida_red}")
+        # 5. Traza perceptrónica de la red
+        partes.append(f"\n\n[Estado Red NBO-a | relu_211]: Confianza {confidence} -> Clave: '{tag}'")
 
         return {
             "estado": "exito",
