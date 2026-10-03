@@ -21,10 +21,15 @@ def relu_211_derivative(x: float) -> float:
     return 0.01
 
 def softmax(x_list: List[float]) -> List[float]:
-    """Softmax nativo numéricamente estable."""
-    max_x = max(x_list) if x_list else 0.0
-    exp_x = [math.exp(i - max_x) for i in x_list]
+    """Softmax nativo numéricamente estable contra Overflow/Underflow."""
+    if not x_list:
+        return []
+    max_x = max(x_list)
+    # Acotar exponentes para evitar OverflowError en exp()
+    exp_x = [math.exp(max(-500.0, min(500.0, i - max_x))) for i in x_list]
     sum_exp = sum(exp_x)
+    if sum_exp == 0.0:
+        return [1.0 / len(x_list)] * len(x_list)
     return [e / sum_exp for e in exp_x]
 
 # =================================================================
@@ -33,11 +38,20 @@ def softmax(x_list: List[float]) -> List[float]:
 
 class NativeNLP:
     IGNORE_CHARS = set('!?.,¿¡:;()-"\'')
+    ACCENT_MAP = str.maketrans({
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+        'ü': 'u', 'ñ': 'n'
+    })
+
+    @staticmethod
+    def normalize_text(text: str) -> str:
+        """Normaliza caracteres acentuados y remueve puntuación."""
+        text_clean = text.lower().translate(NativeNLP.ACCENT_MAP)
+        return "".join([c for c in text_clean if c not in NativeNLP.IGNORE_CHARS])
 
     @staticmethod
     def tokenize(text: str) -> List[str]:
-        text_clean = "".join([c.lower() for c in text if c not in NativeNLP.IGNORE_CHARS])
-        return text_clean.split()
+        return NativeNLP.normalize_text(text).split()
 
     @staticmethod
     def create_vocabulary(intents: List[Dict[str, Any]]) -> Tuple[List[str], List[str]]:
@@ -52,11 +66,11 @@ class NativeNLP:
 
     @staticmethod
     def bag_of_words(text: str, vocabulary: List[str]) -> List[float]:
-        tokens = NativeNLP.tokenize(text)
+        tokens = set(NativeNLP.tokenize(text))
         return [1.0 if word in tokens else 0.0 for word in vocabulary]
 
 # =================================================================
-# 3. RED NEURONAL MULTICAPA NBO-a CON BACKPROPAGATION (Sin Keras/PyTorch)
+# 3. RED NEURONAL MULTICAPA NBO-a CON MOMENTUM (Sin Keras/PyTorch)
 # =================================================================
 
 class NBOPerceptronModel:
@@ -76,8 +90,14 @@ class NBOPerceptronModel:
         self.W2 = [[random.gauss(0, scale2) for _ in range(output_dim)] for _ in range(hidden_dim)]
         self.b2 = [0.0] * output_dim
 
+        # Estructuras de Momentum para optimizar estabilidad
+        self.v_W1 = [[0.0] * hidden_dim for _ in range(input_dim)]
+        self.v_b1 = [0.0] * hidden_dim
+        self.v_W2 = [[0.0] * output_dim for _ in range(hidden_dim)]
+        self.v_b2 = [0.0] * output_dim
+
     def forward(self, x_vec: List[float]) -> Tuple[List[float], List[float], List[float]]:
-        """Paso hacia adelante guardando estados intermedios para el gradiente."""
+        """Paso hacia adelante guardando estados intermedios."""
         z1 = []
         a1 = []
         for j in range(self.hidden_dim):
@@ -93,8 +113,8 @@ class NBOPerceptronModel:
         probs = softmax(z2)
         return a1, z1, probs
 
-    def train_step(self, x_vec: List[float], target_idx: int, lr: float = 0.05):
-        """Retropropagación del error y ajuste de matrices de pesos."""
+    def train_step(self, x_vec: List[float], target_idx: int, lr: float = 0.05, beta: float = 0.9):
+        """Backpropagation con optimizador SGD + Momentum."""
         a1, z1, probs = self.forward(x_vec)
         
         # Gradiente en capa de salida (Cross-Entropy + Softmax)
@@ -105,26 +125,38 @@ class NBOPerceptronModel:
         d_a1 = [sum(d_z2[k] * self.W2[j][k] for k in range(self.output_dim)) for j in range(self.hidden_dim)]
         d_z1 = [d_a1[j] * relu_211_derivative(z1[j]) for j in range(self.hidden_dim)]
 
-        # Actualizar W2 y b2
+        # Actualizar W2 y b2 con Momentum
         for j in range(self.hidden_dim):
             for k in range(self.output_dim):
-                self.W2[j][k] -= lr * d_z2[k] * a1[j]
-        for k in range(self.output_dim):
-            self.b2[k] -= lr * d_z2[k]
+                grad = d_z2[k] * a1[j]
+                self.v_W2[j][k] = beta * self.v_W2[j][k] + (1 - beta) * grad
+                self.W2[j][k] -= lr * self.v_W2[j][k]
 
-        # Actualizar W1 y b1
+        for k in range(self.output_dim):
+            grad = d_z2[k]
+            self.v_b2[k] = beta * self.v_b2[k] + (1 - beta) * grad
+            self.b2[k] -= lr * self.v_b2[k]
+
+        # Actualizar W1 y b1 con Momentum
         for i in range(self.input_dim):
             if x_vec[i] != 0:
                 for j in range(self.hidden_dim):
-                    self.W1[i][j] -= lr * d_z1[j] * x_vec[i]
-        for j in range(self.hidden_dim):
-            self.b1[j] -= lr * d_z1[j]
+                    grad = d_z1[j] * x_vec[i]
+                    self.v_W1[i][j] = beta * self.v_W1[i][j] + (1 - beta) * grad
+                    self.W1[i][j] -= lr * self.v_W1[i][j]
 
-    def fit(self, training_data: List[Tuple[List[float], int]], epochs: int = 200, lr: float = 0.08):
-        """Entrenamiento en bucle sobre el dataset local."""
-        for _ in range(epochs):
+        for j in range(self.hidden_dim):
+            grad = d_z1[j]
+            self.v_b1[j] = beta * self.v_b1[j] + (1 - beta) * grad
+            self.b1[j] -= lr * self.v_b1[j]
+
+    def fit(self, training_data: List[Tuple[List[float], int]], epochs: int = 250, lr_initial: float = 0.08):
+        """Entrenamiento con decaimiento progresivo de tasa de aprendizaje (Learning Rate Decay)."""
+        for epoch in range(epochs):
+            # Decaimiento suave del learning rate para convergencia exacta
+            current_lr = lr_initial / (1.0 + 0.005 * epoch)
             for x_vec, target_idx in training_data:
-                self.train_step(x_vec, target_idx, lr=lr)
+                self.train_step(x_vec, target_idx, lr=current_lr)
 
 # =================================================================
 # 4. MOTOR DE RAZONAMIENTO ONTOLÓGICO NATIVO
@@ -132,15 +164,15 @@ class NBOPerceptronModel:
 
 class NativeOntologyReasoner:
     def infer(self, concept: str) -> str:
-        concept_clean = concept.lower()
-        if "creador" in concept_clean or "raul" in concept_clean or "raúl" in concept_clean:
+        concept_clean = NativeNLP.normalize_text(concept)
+        if any(kw in concept_clean for kw in ["creador", "raul", "alons"]):
             return "Inferencia Ontológica: [Raúl Berny Alonso Morales] -> Creador e Ingeniero Principal de DraymSystem."
-        elif "draym" in concept_clean or "sistema" in concept_clean:
+        elif any(kw in concept_clean for kw in ["draym", "sistema", "nbo"]):
             return "Inferencia Ontológica: [DraymSystem] -> Arquitectura neuronal propia basada en matrices NBO-a."
         return "Inferencia Ontológica: No se hallaron axiomas contradictorios en la base de conocimiento."
 
 # =================================================================
-# 5. ASISTENTE DE BÚSQUEDA WEB NATIVO
+# 5. ASISTENTE DE BÚSQUEDA WEB NATIVO RESILIENTE
 # =================================================================
 
 class NativeWebSearch:
@@ -151,12 +183,13 @@ class NativeWebSearch:
             url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
             req = urllib.request.Request(
                 url, 
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             )
             with urllib.request.urlopen(req, timeout=4) as response:
-                html = response.read().decode('utf-8')
+                html = response.read().decode('utf-8', errors='ignore')
             
-            matches = re.findall(r'<a class="result__url" href="([^"]+)".*?>\s*(.*?)\s*</a>', html)
+            # Patrón más amplio y tolerante a cambios en HTML
+            matches = re.findall(r'<a[^>]+class="[^"]*result__url[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL)
             results = []
             for link, title in matches[:2]:
                 clean_title = re.sub(r'<[^>]+>', '', title).strip()
@@ -204,8 +237,8 @@ for intent in INTENTS_DATA:
         vec = NativeNLP.bag_of_words(pattern, VOCABULARY)
         DATASET.append((vec, target_idx))
 
-# Auto-entrenamiento inmediato con Backpropagation
-MODEL_NBO.fit(DATASET, epochs=250, lr=0.08)
+# Auto-entrenamiento inmediato con Backpropagation + Momentum
+MODEL_NBO.fit(DATASET, epochs=250, lr_initial=0.08)
 REASONER = NativeOntologyReasoner()
 
 # =================================================================
@@ -233,7 +266,7 @@ class AnalysisAgent(BaseAgent):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
-        prompt_lower = prompt.lower()
+        prompt_norm = NativeNLP.normalize_text(prompt)
         
         # Forward pass en la red entrenada
         bow_vector = NativeNLP.bag_of_words(prompt, VOCABULARY)
@@ -243,11 +276,11 @@ class AnalysisAgent(BaseAgent):
         predicted_tag = CLASSES[max_idx]
         confidence = probabilities[max_idx]
 
-        # Respaldo de patron directo si no hay tokens conocidos
+        # Respaldo directo si la red no identifica patrones con alta certeza
         matched_tag = None
         for intent in INTENTS_DATA:
             for pattern in intent["patterns"]:
-                if pattern in prompt_lower:
+                if NativeNLP.normalize_text(pattern) in prompt_norm:
                     matched_tag = intent["tag"]
                     break
             if matched_tag:
@@ -268,9 +301,10 @@ class WebResearchAgent(BaseAgent):
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
         payload = input_data.get("payload_original", {})
+        prompt_norm = NativeNLP.normalize_text(prompt)
         
         web_context = payload.get("web_context", [])
-        if not web_context and ("busca" in prompt.lower() or "internet" in prompt.lower()):
+        if not web_context and ("busca" in prompt_norm or "internet" in prompt_norm):
             web_context = NativeWebSearch.search(prompt)
 
         return {"fuentes": web_context, "hay_web": len(web_context) > 0}
@@ -281,8 +315,9 @@ class CodeAgent(BaseAgent):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "")
-        palabras_clave = ["python", "code", "script", "función", "def ", "html", "js"]
-        return {"requiere_codigo": any(kw in prompt.lower() for kw in palabras_clave)}
+        prompt_norm = NativeNLP.normalize_text(prompt)
+        palabras_clave = ["python", "code", "script", "funcion", "def ", "html", "js"]
+        return {"requiere_codigo": any(kw in prompt_norm for kw in palabras_clave)}
 
 class SynthesisAgent(BaseAgent):
     def __init__(self):
@@ -290,6 +325,7 @@ class SynthesisAgent(BaseAgent):
 
     def process(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         prompt = input_data.get("prompt", "").strip()
+        prompt_norm = NativeNLP.normalize_text(prompt)
         analisis = input_data.get("analisis", {})
         codigo = input_data.get("codigo", {})
         investigacion = input_data.get("investigacion", {})
@@ -310,7 +346,7 @@ class SynthesisAgent(BaseAgent):
             partes.append(f"Procesando entrada: '{prompt}'.")
 
         # Inferencia Ontológica si aplica
-        if any(kw in prompt.lower() for kw in ["razonamiento", "deduce", "ontologia", "creador"]):
+        if any(kw in prompt_norm for kw in ["razonamiento", "deduce", "ontologia", "creador"]):
             partes.append("\n" + REASONER.infer(prompt))
 
         # Bloque de código si aplica
