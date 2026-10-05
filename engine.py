@@ -1,6 +1,6 @@
 from typing import Dict, Any
 from config import DraymConfig
-from orchestrator import AgentOrchestrator
+from orchestrator import Orchestrator as AgentOrchestrator
 
 class GenerativeCoreEngine:
     def __init__(self, engine_id: str = DraymConfig.ENGINE_ID):
