@@ -115,7 +115,11 @@ class NVNB_FrontRouter:
         if len(spiked_indices) == 0:
             return False, "AMBIGUO", 0
 
-        best_idx = int(spiked_indices[np.argmax(final_spikes[spiked_indices])])
+        # CORRECCIÓN DE ÍNDICE: np.argmax sobre el subconjunto extrae la posición relativa;
+        # se mapea de nuevo a spiked_indices para obtener el índice real del vocabulario.
+        relative_best_idx = np.argmax(final_spikes[spiked_indices])
+        best_idx = int(spiked_indices[relative_best_idx])
+        
         intensity = int(final_spikes[best_idx])
         target_word = self.bridge.idx2word.get(best_idx, "DESCONOCIDO")
 
@@ -127,7 +131,9 @@ class NVNB_FrontRouter:
 
         if idx_pre != 0 and idx_target != 0:
             for W in self.W_mtj:
-                current_spin = W[idx_pre, idx_target]
+                # CORRECCIÓN DE OVERFLOW: Conversión a int de Python antes de sumar
+                # para evitar que un np.int8 con valor 127 se desborde a -128.
+                current_spin = int(W[idx_pre, idx_target])
                 if current_spin < self.MAX_SPIN:
                     W[idx_pre, idx_target] = min(self.MAX_SPIN, current_spin + 2)
 
