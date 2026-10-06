@@ -4,7 +4,16 @@ import json
 import os
 import glob
 import importlib
+import urllib.request
+import urllib.parse
+import re
+import sys
 from typing import Dict, Any, List, Tuple
+
+# Asegurar que el directorio actual esté en el path para importaciones locales
+RUTA_LOCAL = os.path.dirname(os.path.abspath(__file__)) if '__file__' in globals() else os.getcwd()
+if RUTA_LOCAL not in sys.path:
+    sys.path.insert(0, RUTA_LOCAL)
 
 # Importar protocolo base desde agents.py
 try:
@@ -19,7 +28,7 @@ except ImportError:
             pass
 
 # =================================================================
-# 1. PUENTE DE MEMORIA COMPARTIDA
+# 1. PUENTE DE MEMORIA COMPARTIDA (SharedMemoryBridge)
 # =================================================================
 
 class SharedMemoryBridge:
@@ -72,7 +81,7 @@ class SharedMemoryBridge:
 
 
 # =================================================================
-# 2. CAPA 1: FRONT-ROUTER INT8
+# 2. CAPA 1: FRONT-ROUTER INT8 (NVNB_FrontRouter)
 # =================================================================
 
 class NVNB_FrontRouter:
@@ -216,7 +225,7 @@ class NBO_DeepOrchestrator:
 
 
 # =================================================================
-# 4. NÚCLEO HÍBRIDO Y PERSISTENCIA
+# 4. NÚCLEO HÍBRIDO Y PERSISTENCIA (HybridCoreSystem)
 # =================================================================
 
 class HybridCoreSystem:
@@ -306,34 +315,63 @@ class HybridCoreSystem:
 
 
 # =================================================================
-# 5. ORQUESTADOR PRINCIPAL
+# 5. ASISTENTE DE BÚSQUEDA WEB INTEGRADO AL ORQUESTADOR
+# =================================================================
+
+class OrchestratorWebSearch:
+    @staticmethod
+    def search(query: str) -> List[Dict[str, str]]:
+        try:
+            encoded_query = urllib.parse.quote(query)
+            url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+            req = urllib.request.Request(
+                url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=4) as response:
+                html = response.read().decode('utf-8', errors='ignore')
+            
+            matches = re.findall(r'<a[^>]+class="[^"]*result__url[^"]*"[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html, re.DOTALL)
+            results = []
+            for link, title in matches[:3]:
+                clean_title = re.sub(r'<[^>]+>', '', title).strip()
+                results.append({"title": clean_title, "link": link.strip()})
+            return results
+        except Exception:
+            return []
+
+
+# =================================================================
+# 6. ORQUESTADOR PRINCIPAL AVANZADO (Swarm / Dynamic Routing)
 # =================================================================
 
 class Orchestrator:
-    def __init__(self, ruta_raiz: str = ".", depth: int = 1000):
+    def __init__(self, ruta_raiz: str = ".", depth: int = 2000):
         self.ruta_raiz = ruta_raiz
         self.contexto_global: Dict[str, Any] = {
             "historial": [],
             "variables_sesion": {},
-            "ultimo_agente": None
+            "ultimo_agente": None,
+            "contexto_enjambre": ""
         }
         self.agentes_registrados: Dict[str, BaseAgente] = {}
+        self.mapa_entrenamiento: Dict[str, List[str]] = {}
         self.dataset_auto_entrenamiento: List[Tuple[str, str]] = []
 
-        # 1. Escanear y cargar dinámicamente archivos 'agente_*.py'
+        # 1. Escanear y cargar dinámicamente archivos 'agente_*.py' en la raíz
         self._cargar_agentes_dinamicamente()
 
         intenciones = list(self.agentes_registrados.keys())
         if not intenciones:
             intenciones = ["desconocido"]
 
-        # 2. Inicializar Núcleo Híbrido
+        # 2. Inicializar Núcleo Híbrido NBO-a / NVNB
         self.core = HybridCoreSystem(depth=depth, confidence_threshold=0.20, intents_l2=intenciones)
 
-        # 3. Intentar cargar estado persistente o entrenar Capa 2
+        # 3. Cargar estado guardado o entrenar automáticamente la Capa 2
         if not self.core.load_state():
             if self.dataset_auto_entrenamiento:
-                self.core.train_orchestrator(self.dataset_auto_entrenamiento, epochs=40, lr=0.08)
+                self.core.train_orchestrator(self.dataset_auto_entrenamiento, epochs=50, lr=0.08)
 
     def _cargar_agentes_dinamicamente(self):
         patron = os.path.join(self.ruta_raiz, "agente_*.py")
@@ -351,27 +389,101 @@ class Orchestrator:
                         instancia = obj()
                         tag = instancia.INTENT_TAG
                         self.agentes_registrados[tag] = instancia
+                        self.mapa_entrenamiento[tag] = getattr(instancia, "EJEMPLOS_ENTRENAMIENTO", [])
 
-                        for ejemplo in instancia.EJEMPLOS_ENTRENAMIENTO:
+                        for ejemplo in self.mapa_entrenamiento[tag]:
                             self.dataset_auto_entrenamiento.append((ejemplo, tag))
             except Exception as e:
                 print(f"[Error cargando módulo {nombre_modulo}]: {e}")
 
+    def asociar_tema_a_agente(self, tag_agente: str, ejemplos: List[str]):
+        """Asigna manualmente nuevos temas o tareas a un agente y re-entrena al orquestador."""
+        if tag_agente in self.agentes_registrados:
+            self.mapa_entrenamiento[tag_agente].extend(ejemplos)
+            nuevo_dataset = [(ej, tag_agente) for ej in ejemplos]
+            self.dataset_auto_entrenamiento.extend(nuevo_dataset)
+            self.core.train_orchestrator(nuevo_dataset, epochs=20, lr=0.05)
+            self.core.save_state()
+
     def procesar(self, prompt: str) -> str:
+        """Procesa una consulta individual con enrutamiento dinámico, conmutación y búsqueda web."""
         tag_destino, certeza, origen = self.core.process_query_eval(prompt)
 
+        # Intento de ejecución con el agente seleccionado
         if tag_destino in self.agentes_registrados:
-            agente = self.agentes_registrados[tag_destino]
-            try:
-                respuesta = agente.ejecutar(prompt, self.contexto_global["variables_sesion"])
-                self.contexto_global["ultimo_agente"] = tag_destino
-                self.contexto_global["historial"].append({
-                    "agente": tag_destino,
-                    "prompt": prompt,
-                    "respuesta": respuesta
-                })
-                return f"[{origen} -> {tag_destino.upper()}]\nRespuesta: {respuesta}"
-            except Exception as e:
-                return f"[Error en Agente {tag_destino}]: {str(e)}"
-        else:
-            return f"[{origen}] No hay un agente registrado para la intención '{tag_destino}'."
+            respuesta_agente = self._ejecutar_agente_seguro(tag_destino, prompt)
+            
+            # Si el agente responde que no tiene contexto sobre el tema
+            if "NO_PUEDO_RESPONDER" in respuesta_agente or "SIN_CONTEXTO" in respuesta_agente:
+                # Re-delegar a otro agente disponible
+                otro_tag = self._buscar_agente_alternativo(tag_destino)
+                if otro_tag:
+                    respuesta_agente = self._ejecutar_agente_seguro(otro_tag, prompt)
+                    tag_destino = otro_tag
+                else:
+                    # Búsqueda web de respaldo si ningún agente puede responder
+                    return self._fallback_busqueda_web(prompt, motivo="Ningún agente posee conocimiento específico sobre el tema.")
+
+            self._actualizar_contexto(tag_destino, prompt, respuesta_agente)
+            return f"[{origen} -> Agente: {tag_destino.upper()}]\nRespuesta: {respuesta_agente}"
+        
+        # Búsqueda web si no hay agente registrado para la intención detectada
+        return self._fallback_busqueda_web(prompt, motivo=f"Intención '{tag_destino}' sin agente asignado.")
+
+    def procesar_enjambre(self, texto_largo: str, tamano_bloque: int = 1500) -> str:
+        """
+        Modo Enjambre (Swarm): Divide libros o códigos masivos en bloques.
+        Los agentes procesan en cadena compartiendo el contexto para mantener el hilo sin perder información.
+        """
+        # Dividir texto en bloques
+        bloques = [texto_largo[i:i + tamano_bloque] for i in range(0, len(texto_largo), tamano_bloque)]
+        lista_agentes = list(self.agentes_registrados.keys())
+
+        if not lista_agentes:
+            return "[Error Enjambre]: No hay agentes registrados para procesar el texto masivo."
+
+        resultados_enjambre = []
+        contexto_acumulado = ""
+
+        for idx, bloque in enumerate(bloques):
+            # Rotar o seleccionar agente para el bloque
+            tag_agente = lista_agentes[idx % len(lista_agentes)]
+            
+            # Pasar contexto acumulado en la sesión global
+            self.contexto_global["contexto_enjambre"] = contexto_acumulado
+            prompt_bloque = f"[BLOQUE {idx + 1}/{len(bloques)} DE ENJAMBRE]:\n{bloque}"
+            
+            respuesta = self._ejecutar_agente_seguro(tag_agente, prompt_bloque)
+            contexto_acumulado += f"\n--- [Avance Agente {tag_agente}] ---\n{respuesta}\n"
+            resultados_enjambre.append(f"-> [Agente {tag_agente.upper()} - Parte {idx + 1}]:\n{respuesta}")
+
+        self.contexto_global["contexto_enjambre"] = contexto_acumulado
+        return "=== SÍNTESIS DE TRABAJO EN ENJAMBRE ===\n\n" + "\n\n".join(resultados_enjambre)
+
+    def _ejecutar_agente_seguro(self, tag_agente: str, prompt: str) -> str:
+        agente = self.agentes_registrados[tag_agente]
+        try:
+            return agente.ejecutar(prompt, self.contexto_global)
+        except Exception as e:
+            return f"[Error en Agente {tag_agente}]: {str(e)}"
+
+    def _buscar_agente_alternativo(self, tag_actual: str) -> str:
+        for tag in self.agentes_registrados:
+            if tag != tag_actual:
+                return tag
+        return None
+
+    def _fallback_busqueda_web(self, prompt: str, motivo: str) -> str:
+        resultados = OrchestratorWebSearch.search(prompt)
+        if resultados:
+            info = "\n".join([f"- {r['title']}: {r['link']}" for r in resultados])
+            return f"[Orquestador - Búsqueda Web de Respaldo ({motivo})]:\nNo se encontró un agente local especializado. Información hallada en línea:\n{info}"
+        return f"[Orquestador]: {motivo} Tampoco se encontraron resultados en línea para '{prompt}'."
+
+    def _actualizar_contexto(self, tag_agente: str, prompt: str, respuesta: str):
+        self.contexto_global["ultimo_agente"] = tag_agente
+        self.contexto_global["historial"].append({
+            "agente": tag_agente,
+            "prompt": prompt,
+            "respuesta": respuesta
+        })
