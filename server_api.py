@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.concurrency import run_in_threadpool
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
+import os
 
 from config import DraymConfig
 from vision_core import process_base64_image
@@ -15,6 +17,7 @@ app = FastAPI(
     version=DraymConfig.VERSION,
 )
 
+# CORS - Permitir todos los orígenes (necesario para Render)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -49,6 +52,7 @@ async def root():
         "status": "online",
         "system": DraymConfig.SYSTEM_NAME,
         "version": DraymConfig.VERSION,
+        "message": "DraymSystem IA Híbrida lista para usar"
     }
 
 
@@ -87,3 +91,8 @@ async def api_chat(req: ChatRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en motor de chat: {str(e)}")
+
+
+# Servir index.html estático si existe
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
