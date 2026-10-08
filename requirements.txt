@@ -1,8 +1,8 @@
 fastapi
-uvicorn
+uvicorn[standard]
+gunicorn
 numpy
 pillow
 duckduckgo_search
 pydantic
-gunicorn
 python-multipart
